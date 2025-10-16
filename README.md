@@ -12,9 +12,8 @@ An MCP (Model Context Protocol) server that provides access to OpenAI's GPT-5-Pr
 ## Prerequisites
 
 - Go 1.25.1 or later
-- **One of the following:**
-  - [OpenAI API Key](https://platform.openai.com/) with access to GPT-5-Pro, OR
-  - [OpenRouter API Key](https://openrouter.ai/) for alternative model access
+- [OpenAI API Key](https://platform.openai.com/) with access to GPT-5-Pro
+  - **Note**: OpenRouter and other providers are currently NOT supported (see Configuration section)
 - [Hermit](https://cashapp.github.io/hermit/) (optional, for environment management)
 
 ## Installation
@@ -52,28 +51,33 @@ Set your OpenAI API key as an environment variable:
 export OPENAI_API_KEY="your-api-key-here"
 ```
 
-### OpenRouter Configuration (Alternative)
+### OpenRouter Configuration (⚠️ Currently Not Supported)
 
-If you don't have an OpenAI API key, you can use OpenRouter as a fallback:
+**IMPORTANT**: This MCP server uses OpenAI's **Responses API** (`/v1/responses`), which is **NOT compatible with OpenRouter** or most other providers.
 
-```bash
-export OPENROUTER_API_KEY="your-openrouter-api-key-here"
-export OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"  # Optional, defaults to this URL
+OpenRouter only supports the **Chat Completions API** (`/v1/chat/completions`), which has a different request/response structure.
+
+**Current Status:**
+- ✅ **OpenAI API**: Fully supported (Responses API)
+- ❌ **OpenRouter**: Not supported (lacks Responses API)
+- ❌ **Other providers**: Most likely not supported
+
+**If you try to use OpenRouter**, you will encounter errors like:
+```
+400 Bad Request - Invalid input (Zod validation errors)
 ```
 
-The server will automatically detect which API key is available and use the appropriate configuration. OpenAI is checked first, then OpenRouter as a fallback.
+**Solutions:**
+1. **Use OpenAI directly** - Set `OPENAI_API_KEY` for full functionality
+2. **Wait for Chat Completions support** - A future version may add Chat Completions API compatibility
+3. **Use a Responses API-compatible provider** - If you find one that supports `/v1/responses`
 
 ### Using direnv
 
 You can also configure with `.envrc`:
 
 ```bash
-# For OpenAI
 export OPENAI_API_KEY="your-api-key-here"
-
-# OR for OpenRouter
-export OPENROUTER_API_KEY="your-openrouter-api-key-here"
-export OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"  # Optional
 ```
 
 ## Usage
@@ -84,13 +88,12 @@ export OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"  # Optional
 task install:claude-code
 ```
 
-This installs the MCP server to your user-level Claude Code configuration with the API key from your environment (either `OPENAI_API_KEY` or `OPENROUTER_API_KEY`).
+This installs the MCP server to your user-level Claude Code configuration with the `OPENAI_API_KEY` from your environment.
 
 ### Manual Installation
 
 Add to your MCP client configuration (e.g., `~/.claude.json`):
 
-**For OpenAI:**
 ```json
 {
   "mcpServers": {
@@ -98,21 +101,6 @@ Add to your MCP client configuration (e.g., `~/.claude.json`):
       "command": "/path/to/gpt-5-pro-mcp/dist/gpt-5-pro-mcp",
       "env": {
         "OPENAI_API_KEY": "your-api-key-here"
-      }
-    }
-  }
-}
-```
-
-**For OpenRouter:**
-```json
-{
-  "mcpServers": {
-    "gpt-5-pro": {
-      "command": "/path/to/gpt-5-pro-mcp/dist/gpt-5-pro-mcp",
-      "env": {
-        "OPENROUTER_API_KEY": "your-openrouter-api-key-here",
-        "OPENROUTER_BASE_URL": "https://openrouter.ai/api/v1"
       }
     }
   }
@@ -255,8 +243,31 @@ task tidy
 
 - **Model**: `gpt-5-pro`
 - **Provider**: OpenAI
-- **API**: OpenAI Responses API
+- **API**: OpenAI Responses API (`/v1/responses`)
 - **Capabilities**: Advanced reasoning, function calling, extended context
+
+## API Compatibility
+
+This MCP server uses OpenAI's **Responses API**, which provides:
+- Server-side conversation state management via response IDs
+- Native tool calling with automatic iteration
+- Structured reasoning output
+
+**Current Limitations:**
+- Only compatible with OpenAI API
+- OpenRouter and other providers use Chat Completions API and are NOT supported
+- Custom providers must support the `/v1/responses` endpoint with OpenAI's schema
+
+**Future Plans:**
+A future version may add Chat Completions API support to enable compatibility with:
+- OpenRouter
+- Azure OpenAI
+- Other OpenAI-compatible providers
+
+This would require significant refactoring to:
+- Convert conversation state management (response IDs → message history)
+- Adapt tool calling mechanism (Responses format → Chat Completions format)
+- Handle different request/response structures
 
 ## Logging
 

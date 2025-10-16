@@ -37,6 +37,7 @@ type GPT5ProClient struct {
 	client     *openai.Client
 	fileOps    FileOps
 	responseID string
+	baseURL    string
 	mu         sync.RWMutex
 }
 
@@ -48,6 +49,7 @@ func New(apiKey string, baseURL string, fileOps FileOps) *GPT5ProClient {
 	if baseURL != "" {
 		opts = append(opts, option.WithBaseURL(baseURL))
 		log.Printf("Initializing client with custom base URL: %s", baseURL)
+		log.Printf("WARNING: This server uses OpenAI's Responses API which may not be compatible with all providers")
 	}
 
 	client := openai.NewClient(opts...)
@@ -55,6 +57,7 @@ func New(apiKey string, baseURL string, fileOps FileOps) *GPT5ProClient {
 	return &GPT5ProClient{
 		client:  &client,
 		fileOps: fileOps,
+		baseURL: baseURL,
 	}
 }
 
@@ -105,6 +108,21 @@ func (c *GPT5ProClient) Handle(ctx context.Context, request mcp.CallToolRequest)
 	response, err := c.client.Responses.New(ctx, params)
 	if err != nil {
 		log.Printf("ERROR: OpenAI API call failed: %v", err)
+
+		// Provide helpful error message for OpenRouter users
+		if c.baseURL != "" {
+			return mcp.NewToolResultError(fmt.Sprintf(
+				"API error: %v\n\n"+
+					"COMPATIBILITY NOTE: This MCP server uses OpenAI's Responses API (/v1/responses) which is NOT supported by OpenRouter.\n"+
+					"OpenRouter only supports the Chat Completions API (/v1/chat/completions).\n\n"+
+					"Solutions:\n"+
+					"1. Use OpenAI API directly (set OPENAI_API_KEY instead of OPENROUTER_API_KEY)\n"+
+					"2. Wait for a future version with Chat Completions support\n"+
+					"3. Use a provider that supports the Responses API",
+				err,
+			)), nil
+		}
+
 		return mcp.NewToolResultError(fmt.Sprintf("OpenAI API error: %v", err)), nil
 	}
 

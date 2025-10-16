@@ -12,7 +12,9 @@ An MCP (Model Context Protocol) server that provides access to OpenAI's GPT-5-Pr
 ## Prerequisites
 
 - Go 1.25.1 or later
-- [OpenAI API Key](https://platform.openai.com/) with access to GPT-5-Pro
+- **One of the following:**
+  - [OpenAI API Key](https://platform.openai.com/) with access to GPT-5-Pro, OR
+  - [OpenRouter API Key](https://openrouter.ai/) for alternative model access
 - [Hermit](https://cashapp.github.io/hermit/) (optional, for environment management)
 
 ## Installation
@@ -42,16 +44,36 @@ go build -o dist/gpt-5-pro-mcp .
 
 ## Configuration
 
+### OpenAI Configuration
+
 Set your OpenAI API key as an environment variable:
 
 ```bash
 export OPENAI_API_KEY="your-api-key-here"
 ```
 
-Or use direnv with `.envrc`:
+### OpenRouter Configuration (Alternative)
+
+If you don't have an OpenAI API key, you can use OpenRouter as a fallback:
 
 ```bash
+export OPENROUTER_API_KEY="your-openrouter-api-key-here"
+export OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"  # Optional, defaults to this URL
+```
+
+The server will automatically detect which API key is available and use the appropriate configuration. OpenAI is checked first, then OpenRouter as a fallback.
+
+### Using direnv
+
+You can also configure with `.envrc`:
+
+```bash
+# For OpenAI
 export OPENAI_API_KEY="your-api-key-here"
+
+# OR for OpenRouter
+export OPENROUTER_API_KEY="your-openrouter-api-key-here"
+export OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"  # Optional
 ```
 
 ## Usage
@@ -62,12 +84,13 @@ export OPENAI_API_KEY="your-api-key-here"
 task install:claude-code
 ```
 
-This installs the MCP server to your user-level Claude Code configuration with the `OPENAI_API_KEY` from your environment.
+This installs the MCP server to your user-level Claude Code configuration with the API key from your environment (either `OPENAI_API_KEY` or `OPENROUTER_API_KEY`).
 
 ### Manual Installation
 
 Add to your MCP client configuration (e.g., `~/.claude.json`):
 
+**For OpenAI:**
 ```json
 {
   "mcpServers": {
@@ -75,6 +98,21 @@ Add to your MCP client configuration (e.g., `~/.claude.json`):
       "command": "/path/to/gpt-5-pro-mcp/dist/gpt-5-pro-mcp",
       "env": {
         "OPENAI_API_KEY": "your-api-key-here"
+      }
+    }
+  }
+}
+```
+
+**For OpenRouter:**
+```json
+{
+  "mcpServers": {
+    "gpt-5-pro": {
+      "command": "/path/to/gpt-5-pro-mcp/dist/gpt-5-pro-mcp",
+      "env": {
+        "OPENROUTER_API_KEY": "your-openrouter-api-key-here",
+        "OPENROUTER_BASE_URL": "https://openrouter.ai/api/v1"
       }
     }
   }

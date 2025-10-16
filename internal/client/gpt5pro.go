@@ -41,8 +41,16 @@ type GPT5ProClient struct {
 }
 
 // New creates a new GPT5ProClient instance
-func New(apiKey string, fileOps FileOps) *GPT5ProClient {
-	client := openai.NewClient(option.WithAPIKey(apiKey))
+func New(apiKey string, baseURL string, fileOps FileOps) *GPT5ProClient {
+	opts := []option.RequestOption{option.WithAPIKey(apiKey)}
+
+	// Add custom base URL if provided (for OpenRouter or other providers)
+	if baseURL != "" {
+		opts = append(opts, option.WithBaseURL(baseURL))
+		log.Printf("Initializing client with custom base URL: %s", baseURL)
+	}
+
+	client := openai.NewClient(opts...)
 
 	return &GPT5ProClient{
 		client:  &client,

@@ -11,13 +11,30 @@ import (
 )
 
 func main() {
+	// Check for OPENAI_API_KEY first, fall back to OPENROUTER_API_KEY
 	apiKey := os.Getenv("OPENAI_API_KEY")
+	baseURL := ""
+
 	if apiKey == "" {
-		log.Fatal("OPENAI_API_KEY environment variable is required")
+		// Fall back to OpenRouter configuration
+		apiKey = os.Getenv("OPENROUTER_API_KEY")
+		baseURL = os.Getenv("OPENROUTER_BASE_URL")
+
+		if apiKey == "" {
+			log.Fatal("Either OPENAI_API_KEY or OPENROUTER_API_KEY environment variable is required")
+		}
+
+		if baseURL == "" {
+			baseURL = "https://openrouter.ai/api/v1"
+		}
+
+		log.Printf("Using OpenRouter API with base URL: %s", baseURL)
+	} else {
+		log.Printf("Using OpenAI API")
 	}
 
 	f := fileops.New()
-	c := client.New(apiKey, f)
+	c := client.New(apiKey, baseURL, f)
 	s := server.New(c)
 
 	if err := mcpserver.ServeStdio(s); err != nil {

@@ -51,26 +51,39 @@ Set your OpenAI API key as an environment variable:
 export OPENAI_API_KEY="your-api-key-here"
 ```
 
-### OpenRouter Configuration (⚠️ Currently Not Supported)
+#### Using Custom OpenAI-Compatible APIs (e.g., aihubmix)
 
-**IMPORTANT**: This MCP server uses OpenAI's **Responses API** (`/v1/responses`), which is **NOT compatible with OpenRouter** or most other providers.
+✅ **NOW SUPPORTED!** You can use any OpenAI-compatible API endpoint by setting `OPENAI_BASE_URL`:
 
-OpenRouter only supports the **Chat Completions API** (`/v1/chat/completions`), which has a different request/response structure.
-
-**Current Status:**
-- ✅ **OpenAI API**: Fully supported (Responses API)
-- ❌ **OpenRouter**: Not supported (lacks Responses API)
-- ❌ **Other providers**: Most likely not supported
-
-**If you try to use OpenRouter**, you will encounter errors like:
-```
-400 Bad Request - Invalid input (Zod validation errors)
+```bash
+export OPENAI_API_KEY="your-api-key-here"
+export OPENAI_BASE_URL="https://aihubmix.com/v1"  # or your custom endpoint
 ```
 
-**Solutions:**
-1. **Use OpenAI directly** - Set `OPENAI_API_KEY` for full functionality
-2. **Wait for Chat Completions support** - A future version may add Chat Completions API compatibility
-3. **Use a Responses API-compatible provider** - If you find one that supports `/v1/responses`
+**How it works:**
+- When `OPENAI_BASE_URL` is set, the server automatically uses the **Chat Completions API** (`/v1/chat/completions`)
+- This works with aihubmix, Azure OpenAI, and other OpenAI-compatible providers
+- All features work identically: conversation continuity, tool calling, context gathering
+- Without `OPENAI_BASE_URL`, the server uses the official OpenAI **Responses API** (`/v1/responses`)
+
+### OpenRouter Configuration
+
+✅ **NOW SUPPORTED!** You can use OpenRouter with the Chat Completions API:
+
+```bash
+export OPENROUTER_API_KEY="your-openrouter-key"
+export OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"  # Optional, defaults to this
+```
+
+**How it works:**
+- The server automatically detects OpenRouter configuration
+- Uses Chat Completions API for full compatibility
+- Supports all features: conversation continuity, tool calling, context gathering
+
+**API Support Summary:**
+- ✅ **Official OpenAI**: Responses API (`/v1/responses`) - Default when no custom URL
+- ✅ **Custom Endpoints** (aihubmix, etc.): Chat Completions API - When `OPENAI_BASE_URL` is set
+- ✅ **OpenRouter**: Chat Completions API - When `OPENROUTER_API_KEY` is set
 
 ### Using direnv
 
@@ -121,6 +134,8 @@ mcp-tester call --tool=gpt-5-pro --json='{"prompt":"What is 2+2?"}' dist/gpt-5-p
 
 - **prompt** (required): The question or problem to analyze
 - **continue** (optional, default: `true`): Continue previous conversation or start fresh
+- **gathered_context** (optional): JSON string containing code context gathered by Claude Code
+- **auto_gather_context** (optional, default: `true`): Enable automatic context gathering when code references are detected
 
 ### Available Tools for GPT-5-Pro
 
@@ -193,6 +208,111 @@ GPT-5-Pro will automatically read files when needed:
 
 GPT-5-Pro will use `read_file` to examine the code and provide specific recommendations.
 
+## Intelligent Context Gathering
+
+The MCP server includes an intelligent context-gathering system that enhances GPT-5-Pro's analysis by ensuring it has access to relevant code before providing advice.
+
+### How It Works
+
+**Two-Phase Protocol:**
+
+1. **Phase 1 - Context Analysis**: When you ask a question mentioning files, functions, or line numbers, the MCP automatically detects these references and returns a structured request for context.
+
+2. **Phase 2 - Enriched Analysis**: Claude Code gathers the requested context (reads files, extracts functions) and re-calls the MCP. The prompt is enriched with all relevant code, and GPT-5-Pro provides accurate, code-aware advice.
+
+### Automatic Context Detection
+
+The system automatically detects:
+- File paths (e.g., `tree_publisher.py`, `src/client/api.ts`)
+- Function calls (e.g., `get_tree_state()`, `updateUserProfile()`)
+- Line number references (e.g., `lines 94-99`, `line 230`, `:1686`)
+- Code-related keywords (function, class, method, implementation, etc.)
+
+### Example Workflow
+
+**User Question:**
+```
+Why is get_tree_state() in tree_publisher.py lines 116-230 returning empty data?
+The orchestrator calls update_tree_state() at line 1686.
+```
+
+**Phase 1 - MCP Response:**
+```
+To provide accurate analysis, I need to see the actual code. Please gather the following context:
+
+1. file_content
+   Path: tree_publisher.py
+   Reason: file mentioned in prompt
+
+2. function_implementation
+   Function: get_tree_state
+   Lines: 116-230
+   Reason: key function in analysis
+
+3. function_implementation
+   Function: update_tree_state
+   Reason: function referenced in prompt
+```
+
+**Phase 2 - Claude Code Actions:**
+- Reads `tree_publisher.py`
+- Extracts function implementations
+- Re-calls MCP with gathered context
+
+**Phase 2 - MCP Enriches Prompt:**
+```
+# ORIGINAL QUESTION
+Why is get_tree_state() returning empty data?
+
+# RELEVANT CODE CONTEXT
+## File: tree_publisher.py
+[full file contents]
+
+## Function: get_tree_state
+[lines 116-230]
+
+## Function: update_tree_state
+[implementation]
+
+# ANALYSIS REQUEST
+Given the code above, please answer the original question.
+```
+
+**Result:** GPT-5-Pro sees the actual code and provides accurate, specific advice instead of generic suggestions.
+
+### Context JSON Format
+
+When providing context manually or via automation:
+
+```json
+{
+  "files": {
+    "path/to/file.py": "file contents...",
+    "another/file.go": "file contents..."
+  },
+  "functions": {
+    "function_name": "function implementation...",
+    "ClassName.method": "method implementation..."
+  },
+  "metadata": {
+    "logs": "relevant log output...",
+    "error_messages": "stack traces...",
+    "call_graph": "function relationships..."
+  }
+}
+```
+
+### Disabling Context Gathering
+
+To skip automatic context gathering for simple questions:
+
+```json
+{
+  "prompt": "What are the best practices for error handling?",
+  "auto_gather_context": false
+}
+```
+
 ## How It Works
 
 This MCP uses OpenAI's Responses API with GPT-5-Pro. The system prompt guides the model to:
@@ -248,26 +368,26 @@ task tidy
 
 ## API Compatibility
 
-This MCP server uses OpenAI's **Responses API**, which provides:
+This MCP server supports **both** OpenAI API types:
+
+### Responses API (Official OpenAI)
+Used by default when no custom base URL is set:
 - Server-side conversation state management via response IDs
 - Native tool calling with automatic iteration
 - Structured reasoning output
+- Best for official OpenAI GPT-5-Pro access
 
-**Current Limitations:**
-- Only compatible with OpenAI API
-- OpenRouter and other providers use Chat Completions API and are NOT supported
-- Custom providers must support the `/v1/responses` endpoint with OpenAI's schema
+### Chat Completions API (Custom Endpoints & OpenRouter)
+Automatically used when custom endpoints detected:
+- Client-side conversation history management
+- Standard tool calling with function definitions
+- Compatible with aihubmix, Azure OpenAI, OpenRouter, and other providers
+- Same features and capabilities as Responses API
 
-**Future Plans:**
-A future version may add Chat Completions API support to enable compatibility with:
-- OpenRouter
-- Azure OpenAI
-- Other OpenAI-compatible providers
-
-This would require significant refactoring to:
-- Convert conversation state management (response IDs → message history)
-- Adapt tool calling mechanism (Responses format → Chat Completions format)
-- Handle different request/response structures
+**Automatic Detection:**
+- Official OpenAI (no `OPENAI_BASE_URL`) → Responses API
+- Custom endpoint (`OPENAI_BASE_URL` set) → Chat Completions API
+- OpenRouter (`OPENROUTER_API_KEY` set) → Chat Completions API
 
 ## Logging
 

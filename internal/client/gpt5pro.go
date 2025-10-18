@@ -8,6 +8,7 @@ import (
 	"os"
 	"sync"
 
+	contextpkg "github.com/lox/gpt-5-pro-mcp/internal/context"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
@@ -39,30 +40,50 @@ type GPT5ProClient struct {
 	responseID string
 	baseURL    string
 	mu         sync.RWMutex
+	chatClient *ChatCompletionsClient
+	useResponsesAPI bool
 }
 
 // New creates a new GPT5ProClient instance
-func New(apiKey string, baseURL string, fileOps FileOps) *GPT5ProClient {
+// If useResponsesAPI is false, it will use Chat Completions API instead
+func New(apiKey string, baseURL string, fileOps FileOps, useResponsesAPI bool) *GPT5ProClient {
 	opts := []option.RequestOption{option.WithAPIKey(apiKey)}
 
 	// Add custom base URL if provided (for OpenRouter or other providers)
 	if baseURL != "" {
 		opts = append(opts, option.WithBaseURL(baseURL))
 		log.Printf("Initializing client with custom base URL: %s", baseURL)
-		log.Printf("WARNING: This server uses OpenAI's Responses API which may not be compatible with all providers")
+		if useResponsesAPI {
+			log.Printf("WARNING: Using Responses API which may not be compatible with all providers")
+		}
 	}
 
 	client := openai.NewClient(opts...)
 
-	return &GPT5ProClient{
-		client:  &client,
-		fileOps: fileOps,
-		baseURL: baseURL,
+	gpt5ProClient := &GPT5ProClient{
+		client:          &client,
+		fileOps:         fileOps,
+		baseURL:         baseURL,
+		useResponsesAPI: useResponsesAPI,
 	}
+
+	// If not using Responses API, create Chat Completions client
+	if !useResponsesAPI {
+		log.Printf("Using Chat Completions API for compatibility")
+		gpt5ProClient.chatClient = NewChatCompletions(&client, baseURL, fileOps)
+	}
+
+	return gpt5ProClient
 }
 
-// Handle processes a consultation request using Responses API
+// Handle processes a consultation request using appropriate API (Responses or Chat Completions)
 func (c *GPT5ProClient) Handle(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	// Route to Chat Completions if configured
+	if !c.useResponsesAPI && c.chatClient != nil {
+		return c.chatClient.Handle(ctx, request)
+	}
+
+	// Otherwise use Responses API
 	prompt, err := request.RequireString("prompt")
 	if err != nil {
 		log.Printf("ERROR: Failed to get prompt: %v", err)
@@ -70,7 +91,42 @@ func (c *GPT5ProClient) Handle(ctx context.Context, request mcp.CallToolRequest)
 	}
 
 	continueConversation := request.GetBool("continue", true)
-	log.Printf("Received request: prompt_len=%d continue=%v", len(prompt), continueConversation)
+	gatheredContext := request.GetString("gathered_context", "")
+	autoGatherContext := request.GetBool("auto_gather_context", true)
+
+	log.Printf("[ResponsesAPI] Received request: prompt_len=%d continue=%v auto_gather=%v has_context=%v",
+		len(prompt), continueConversation, autoGatherContext, gatheredContext != "")
+
+	// Phase 1: Context gathering logic
+	if autoGatherContext && gatheredContext == "" {
+		log.Printf("[ResponsesAPI] Analyzing prompt for code references...")
+		requirements := contextpkg.AnalyzePromptForReferences(prompt)
+
+		if requirements.HasCodeRefs {
+			log.Printf("[ResponsesAPI] Found code references: files=%d functions=%d",
+				len(requirements.Files), len(requirements.Functions))
+
+			contextRequest := contextpkg.BuildContextRequest(requirements)
+			responseText := contextpkg.FormatContextRequestAsText(contextRequest)
+
+			log.Printf("[ResponsesAPI] Returning context request to Claude Code")
+			return mcp.NewToolResultText(responseText), nil
+		}
+
+		log.Printf("[ResponsesAPI] No code references found, proceeding without context")
+	}
+
+	// Phase 2: Enrich prompt with gathered context if provided
+	if gatheredContext != "" {
+		log.Printf("[ResponsesAPI] Enriching prompt with gathered context: len=%d", len(gatheredContext))
+		enrichedPrompt, err := contextpkg.EnrichPromptWithContext(prompt, gatheredContext)
+		if err != nil {
+			log.Printf("[ResponsesAPI] ERROR: Failed to enrich prompt: %v", err)
+			return mcp.NewToolResultError(fmt.Sprintf("Failed to process gathered_context: %v", err)), nil
+		}
+		prompt = enrichedPrompt
+		log.Printf("[ResponsesAPI] Prompt enriched: new_len=%d", len(prompt))
+	}
 
 	c.mu.Lock()
 	defer c.mu.Unlock()

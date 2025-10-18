@@ -30,6 +30,12 @@ func New(handler ToolHandler) *server.MCPServer {
 		mcp.WithBoolean("continue",
 			mcp.Description("Continue previous conversation (true) or start fresh (false). Default: true"),
 		),
+		mcp.WithString("gathered_context",
+			mcp.Description("Optional JSON string containing code context gathered by Claude Code. Format: {\"files\": {\"path\": \"content\"}, \"functions\": {\"name\": \"impl\"}, \"metadata\": {\"key\": \"value\"}}"),
+		),
+		mcp.WithBoolean("auto_gather_context",
+			mcp.Description("Enable automatic context gathering (default: true). If true, MCP will request context when code references are detected."),
+		),
 	)
 
 	s.AddTool(gpt5ProTool, handler.Handle)
